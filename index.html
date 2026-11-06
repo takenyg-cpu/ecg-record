@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>심전도(ECG) 증상 기록지</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .input-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            resize: vertical;
+            min-height: 100px;
+            box-sizing: border-box;
+            background-color: #fff;
+        }
+        button {
+            padding: 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #007aff;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:active {
+            background-color: #0056b3;
+        }
+        .export-btn {
+            background-color: #28a745;
+            margin-top: 15px;
+            width: 100%;
+        }
+        .export-btn:active {
+            background-color: #1e7e34;
+        }
+        .clear-btn {
+            background-color: #dc3545;
+            margin-top: 10px;
+            width: 100%;
+        }
+        .clear-btn:active {
+            background-color: #c82333;
+        }
+        .record-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .record-card {
+            background: white;
+            padding: 16px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-left: 5px solid #007aff;
+        }
+        .record-time {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .record-text {
+            font-size: 16px;
+            margin: 0;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .empty-msg {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+        }
+        .list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>웨어러블 심전도 증상 기록</h2>
+
+    <div class="input-section">
+        <textarea id="symptomInput" placeholder="발현된 증상을 입력하세요.&#13;&#10;(예: 가슴 두근거림, 답답함, 어지러움, 찌르는 듯한 통증 등)"></textarea>
+        <button onclick="recordSymptom()">증상 기록하기</button>
+    </div>
+
+    <div class="list-header">
+        <h3 style="margin: 0;">기록 내역</h3>
+        <span id="recordCount" style="color: #666; font-size: 14px;">총 0건</span>
+    </div>
+
+    <div id="recordsContainer" class="record-list">
+        <!-- 기록된 데이터가 여기에 렌더링됩니다 -->
+    </div>
+
+    <button class="export-btn" onclick="exportToCSV()">엑셀(CSV)로 내보내기</button>
+    <button class="clear-btn" onclick="clearRecords()">기록 지우기</button>
+
+    <script>
+        const STORAGE_KEY = 'ecg_symptom_records';
+        const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000; // 2주를 밀리초(ms)로 환산
+
+        document.addEventListener('DOMContentLoaded', loadRecords);
+
+        function loadRecords() {
+            let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            const now = Date.now();
+            
+            // 2주일(14일)이 지난 오래된 데이터 필터링
+            const validRecords = records.filter(record => {
+                // 모바일 브라우저 호환성을 위해 띄어쓰기를 'T'로 변환 후 시간 계산
+                const recordTime = new Date(record.datetime.replace(' ', 'T')).getTime();
+                return (now - recordTime) <= TWO_WEEKS_MS;
+            });
+
+            // 필터링된 데이터가 있다면 스토리지를 갱신
+            if (records.length !== validRecords.length) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(validRecords));
+                records = validRecords;
+            }
+
+            const container = document.getElementById('recordsContainer');
+            const countSpan = document.getElementById('recordCount');
+            
+            container.innerHTML = '';
+            countSpan.textContent = `총 ${records.length}건`;
+
+            if (records.length === 0) {
+                container.innerHTML = '<div class="empty-msg">아직 기록된 증상이 없습니다.</div>';
+                return;
+            }
+
+            records.slice().reverse().forEach(record => {
+                const card = document.createElement('div');
+                card.className = 'record-card';
+                card.innerHTML = `
+                    <div class="record-time">${record.datetime}</div>
+                    <p class="record-text">${record.symptom}</p>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function recordSymptom() {
+            const input = document.getElementById('symptomInput');
+            const symptom = input.value.trim();
+
+            if (!symptom) {
+                alert('증상 내용을 먼저 입력해주세요.');
+                return;
+            }
+
+            const now = new Date();
+            const datetime = now.getFullYear() + '-' +
+                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                String(now.getDate()).padStart(2, '0') + ' ' +
+                String(now.getHours()).padStart(2, '0') + ':' +
+                String(now.getMinutes()).padStart(2, '0') + ':' +
+                String(now.getSeconds()).padStart(2, '0');
+
+            const records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            records.push({ datetime, symptom });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+
+            input.value = '';
+            loadRecords();
+        }
+
+        function exportToCSV() {
+            const records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            if (records.length === 0) {
+                alert('내보낼 기록이 없습니다.');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF발현 일시,증상 내용\n";
+            
+            records.forEach(r => {
+                const safeSymptom = r.symptom.replace(/"/g, '""');
+                csvContent += `${r.datetime},"${safeSymptom}"\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "심전도_증상기록.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function clearRecords() {
+            const records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            if (records.length === 0) {
+                alert('지울 기록이 없습니다.');
+                return;
+            }
+
+            // 실수로 누르는 것을 방지하기 위한 확인창
+            if (confirm('정말로 모든 기록을 지우시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+                localStorage.removeItem(STORAGE_KEY);
+                loadRecords();
+                alert('모든 기록이 초기화되었습니다.');
+            }
+        }
+    </script>
+</body>
+</html>
